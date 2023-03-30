@@ -6,20 +6,7 @@
 // full browser environment (see documentation).
 
 // This shows the HTML page in "ui.html".
-figma.showUI(__html__, { width: 480, height: 520 });
-
-async function getImageHashFromSVG(svg: string) {
-  const imageNode = figma.createNodeFromSvg(svg);
-  const imageBytes = await imageNode.exportAsync({
-    format: "PNG",
-    constraint: { type: "SCALE", value: 2 },
-  });
-  const imageData = figma.createImage(imageBytes);
-
-  imageNode.remove();
-
-  return imageData.hash;
-}
+figma.showUI(__html__, { width: 480, height: 400 });
 
 function handleSelectionChange() {
   if (
@@ -36,16 +23,6 @@ function handleSelectionChange() {
 
 figma.on("selectionchange", handleSelectionChange);
 
-async function loadSavedKey() {
-  const savedUserKey = await figma.clientStorage.getAsync("zebra_code_key");
-
-  if (savedUserKey) {
-    figma.ui.postMessage({ type: "state:saved-key", text: savedUserKey });
-  }
-}
-
-loadSavedKey();
-
 // Calls to "parent.postMessage" from within the HTML page will trigger this
 // callback. The callback will be passed the "pluginMessage" property of the
 // posted message.
@@ -53,28 +30,6 @@ figma.ui.onmessage = async (message) => {
   await figma.loadFontAsync({ family: "Inter", style: "Regular" });
 
   let data = "";
-
-  if (message.type === "setting:save") {
-    await figma.clientStorage.setAsync("zebra_code_key", message.text);
-
-    figma.notify("API key saved successfully!", {
-      error: false,
-      timeout: 3000,
-    });
-
-    figma.ui.postMessage({ type: "state:key-updated" });
-  }
-
-  if (message.type === "setting:clear") {
-    await figma.clientStorage.setAsync("zebra_code_key", null);
-
-    figma.notify("API key has been cleared!", {
-      error: false,
-      timeout: 3000,
-    });
-
-    figma.ui.postMessage({ type: "state:key-updated" });
-  }
 
   // One way of distinguishing between different types of messages sent from
   // your HTML page is to use an object with a "type" property like this.
@@ -96,19 +51,13 @@ figma.ui.onmessage = async (message) => {
       data = encodeURIComponent(textNode.characters);
     }
 
-    let apiKey = await figma.clientStorage.getAsync("zebra_code_key");
-
-    if (!apiKey) {
-      apiKey = "eaaa87b76cmsh4da34320da819f1p141d36jsn9b91cd16cb95"; // Default API Key
-    }
-
     try {
       const response = await fetch(
         `https://zebra-code.p.rapidapi.com/?data=${data}&type=${format}`,
         {
           method: "GET",
           headers: {
-            "X-RapidAPI-Key": apiKey,
+            "X-RapidAPI-Key": "9177ead490msha2000b73cf6ac13p1545c0jsn8e9e83d0fed7", // Default API Key
             "X-RapidAPI-Host": "zebra-code.p.rapidapi.com",
           },
         }
@@ -118,10 +67,10 @@ figma.ui.onmessage = async (message) => {
 
       if (!imageData) {
         if (response.status === 403) {
-          throw new Error("Your API Key is invalid or expired");
+          throw new Error("API Key is invalid or expired");
         } else if (response.status === 429) {
           throw new Error(
-            "API Request exceeded capacity, use your own key if possible."
+            "API Request exceeded capacity."
           );
         } else {
           throw new Error(
@@ -130,12 +79,6 @@ figma.ui.onmessage = async (message) => {
         }
       }
 
-      const imageHash = await getImageHashFromSVG(imageData);
-      const imageFill: ImagePaint = {
-        type: "IMAGE",
-        scaleMode: "FIT",
-        imageHash,
-      };
       const formatName = format.replace(/\-/gm, " ");
       const frame = figma.createFrame();
       frame.name = formatName + " - " + decodeURIComponent(data);
@@ -152,8 +95,7 @@ figma.ui.onmessage = async (message) => {
 
       frame.appendChild(label);
 
-      const rectangle = figma.createRectangle();
-      rectangle.fills = [imageFill];
+      const rectangle = figma.createNodeFromSvg(imageData);
       rectangle.x = 20;
 
       if (format === "QR_CODE") {
